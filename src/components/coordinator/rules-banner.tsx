@@ -4,7 +4,9 @@ import { useShuttle } from "@/context/shuttle-context";
 
 export function RulesBanner() {
   const { config } = useShuttle();
-  const seats = config.vanCapacity;
+  const maxVehicleCapacity =
+    config.vehicles.reduce((max, vehicle) => Math.max(max, vehicle.capacity), 0) || 0;
+  const seats = Math.max(maxVehicleCapacity - 1, 0);
   const win = config.groupingWindowMinutes;
   const sat = config.saturdayStartTime;
 
