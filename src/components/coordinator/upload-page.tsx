@@ -104,29 +104,55 @@ export function UploadPage() {
               <FileUpload
                 uploadDelay={40}
                 maxFileSize={25 * 1024 * 1024}
-                acceptedFileTypes={[]}
+                acceptedFileTypes={[
+                  ".csv",
+                  ".xls",
+                  ".xlsx",
+                  "text/csv",
+                  "application/vnd.ms-excel",
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ]}
                 validateFile={(file) => {
-                  if (!/\.(csv|xlsx)$/i.test(file.name)) {
+                  if (!/\.(csv|xls|xlsx)$/i.test(file.name)) {
                     return {
-                      message: "Please upload a .csv or .xlsx file.",
+                      message: "Please upload a .csv, .xls, or .xlsx file.",
                       code: "INVALID_EXT",
                     };
                   }
                   return null;
                 }}
+                onUploadError={(error) => {
+                  showHint(`Upload failed: ${error.message}`);
+                }}
                 onUploadSuccess={(file) => {
                   const reader = new FileReader();
                   reader.onload = (e) => {
-                    const buf = e.target?.result;
-                    if (!buf || !(buf instanceof ArrayBuffer)) return;
-                    const wb = XLSX.read(buf, { type: "array" });
-                    const sheet = wb.Sheets[wb.SheetNames[0]];
-                    const rows = XLSX.utils.sheet_to_json(sheet, {
-                      header: 1,
-                      defval: "",
-                    }) as unknown[][];
-                    const parsed = parseFormRows(rows);
-                    ingestParse(parsed);
+                    try {
+                      const buf = e.target?.result;
+                      if (!buf || !(buf instanceof ArrayBuffer)) {
+                        showHint(
+                          "Could not read that file. Please try exporting again from Forms."
+                        );
+                        return;
+                      }
+                      const wb = XLSX.read(buf, { type: "array" });
+                      const firstSheetName = wb.SheetNames[0];
+                      if (!firstSheetName) {
+                        showHint("The uploaded file has no worksheet data.");
+                        return;
+                      }
+                      const sheet = wb.Sheets[firstSheetName];
+                      const rows = XLSX.utils.sheet_to_json(sheet, {
+                        header: 1,
+                        defval: "",
+                      }) as unknown[][];
+                      const parsed = parseFormRows(rows);
+                      ingestParse(parsed);
+                    } catch {
+                      showHint(
+                        "We couldn't parse that file. Please upload the original Forms CSV/XLS export."
+                      );
+                    }
                   };
                   reader.readAsArrayBuffer(file);
                 }}
