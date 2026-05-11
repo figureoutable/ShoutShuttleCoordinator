@@ -367,10 +367,6 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                   >
                     Airport clearance time (minutes)
                   </Label>
-                  <p className="text-muted-foreground text-[0.65rem] leading-snug">
-                    Inbound driver leave = first landing + clearance + exit-to-meet − going-leg drive
-                    (see Planning run cards: Driver leave).
-                  </p>
                   <Input
                     id={`${baseId}-touchdown`}
                     type="number"
