@@ -22,6 +22,7 @@ import type {
   Vehicle,
 } from "@/lib/types";
 import type { CanonicalStop } from "@/lib/locations";
+import { isOutboundShuttleDay } from "@/lib/shuttle-days";
 import { cn } from "@/lib/utils";
 
 const PX_PER_MINUTE = 1.35;
@@ -68,7 +69,7 @@ function TimelineRunDetailHeader({
   driver: string | undefined | null;
 }) {
   const timing = runDriverTimingLabels(run, day, config);
-  const isSaturday = day === "saturday";
+  const outbound = isOutboundShuttleDay(config, day);
   const pax = totalPaxInRun(run);
   const terminals =
     formatRunTerminalsShort(run.terminals) || run.terminals[0]?.trim() || "-";
@@ -76,12 +77,12 @@ function TimelineRunDetailHeader({
   const namesShown =
     rawNames.length > 200 ? `${rawNames.slice(0, 197)}…` : rawNames;
   const stops = uniqueLocationLines(
-    isSaturday
+    outbound
       ? run.passengers.map((p) => p.outboundPickUpCanonical)
       : run.passengers.map((p) => p.inboundDropOffCanonical)
   );
   const stopsShown = stops.length ? stops.join(" · ") : "-";
-  const stopHeading = isSaturday ? "Pick-up points" : "Drop off points";
+  const stopHeading = outbound ? "Pick-up points" : "Drop off points";
   const vLine = vehicleName?.trim() ? vehicleName : "-";
   const dLine = driver?.trim() ? driver : "-";
 
@@ -92,7 +93,7 @@ function TimelineRunDetailHeader({
         <>
           <p>
             <span className="font-semibold">
-              {isSaturday ? "Depart:" : "Driver leave:"}
+              {outbound ? "Depart:" : "Driver leave:"}
             </span>{" "}
             <span className="tabular-nums">{timing.leave}</span>
           </p>
@@ -376,10 +377,10 @@ export function PlanningTimeline({
   const exitToMeet = config.inboundAirportExitWaitMinutes ?? 0;
   const handover = config.inboundHandoverBufferMinutes;
 
-  const kindLine =
-    day === "saturday"
-      ? `Saturday: each leg uses base ${travel}m travel, scaled by peak (+${traffic.peakExtraPercent}%) or off-peak outside those windows (see Configuration)`
-      : `Arrivals: drive legs use base ${travel}m with the same traffic scaling; vertical placement uses touchdown→exit, exit→meet, and load buffers from Configuration.`;
+  const outboundDay = isOutboundShuttleDay(config, day);
+  const kindLine = outboundDay
+    ? `Departures: each leg uses base ${travel}m travel, scaled by peak (+${traffic.peakExtraPercent}%) or off-peak outside those windows (see Configuration)`
+    : `Arrivals: drive legs use base ${travel}m with the same traffic scaling; vertical placement uses touchdown→exit, exit→meet, and load buffers from Configuration.`;
 
   const knownVehicleIds = useMemo(
     () => new Set(dayVehicles.map((v) => v.id)),
@@ -473,7 +474,7 @@ export function PlanningTimeline({
           </>
         )}
       </p>
-      {day !== "saturday" ? (
+      {!outboundDay ? (
         <p className="text-muted-foreground text-[0.7rem] leading-snug">
           <span className="font-medium text-foreground/80">Runs:</span> each block
           spans from journey start to estimated return on the clock. Click a block

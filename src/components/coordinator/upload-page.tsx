@@ -3,8 +3,8 @@
 import * as XLSX from "xlsx";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ManualBookingCard } from "@/components/coordinator/manual-booking-card";
 import FileUpload from "@/components/kokonutui/file-upload";
-import GradientButton from "@/components/kokonutui/gradient-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -163,13 +163,15 @@ export function UploadPage() {
               <p className="font-medium text-[#6B7280] text-xs uppercase tracking-wide">
                 Or try sample data
               </p>
-              <GradientButton
+              <Button
                 type="button"
-                label="Load demo data"
-                variant="coral"
-                className="h-12 w-full min-w-[10rem]"
+                variant="default"
+                size="default"
+                className="h-11 w-full min-w-[10rem]"
                 onClick={() => ingestParse(getMockParseResult())}
-              />
+              >
+                Load demo data
+              </Button>
             </div>
           </div>
           <div className="mt-6 flex flex-col gap-3 border-[#E5E7EB] border-t pt-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -188,6 +190,8 @@ export function UploadPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ManualBookingCard />
 
       {actionHint ? (
         <p
@@ -276,21 +280,25 @@ export function UploadPage() {
               </div>
             ) : null}
 
-            <div className="flex flex-wrap gap-3">
-              <GradientButton
+            <div className="flex flex-wrap gap-2">
+              <Button
                 type="button"
-                label="View planning"
-                variant="coral"
-                className="h-12 min-w-[180px]"
+                variant="default"
+                size="sm"
+                className="min-w-[10rem]"
                 onClick={() => router.push("/planning")}
-              />
-              <GradientButton
+              >
+                View planning
+              </Button>
+              <Button
                 type="button"
-                label="View day-of"
-                variant="coralSoft"
-                className="h-12 min-w-[180px]"
+                variant="outline"
+                size="sm"
+                className="min-w-[10rem]"
                 onClick={() => router.push("/day-of")}
-              />
+              >
+                View day-of
+              </Button>
             </div>
 
             <div className="space-y-3 border-[#E5E7EB] border-t pt-6">

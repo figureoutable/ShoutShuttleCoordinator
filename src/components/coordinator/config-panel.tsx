@@ -2,7 +2,6 @@
 
 import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useId, useState } from "react";
-import GradientButton from "@/components/kokonutui/gradient-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -23,7 +22,13 @@ import {
 import { useShuttle } from "@/context/shuttle-context";
 import { effectiveDriverVehicleIds } from "@/lib/driver-vehicle-eligibility";
 import { cn } from "@/lib/utils";
-import type { Driver, ShuttleDay, TimelineTrafficWindow, Vehicle } from "@/lib/types";
+import type {
+  Driver,
+  ShuttleDay,
+  ShuttleDaySpec,
+  TimelineTrafficWindow,
+  Vehicle,
+} from "@/lib/types";
 
 /** Human-readable list of time bands for the config summary (e.g. 07:00–09:30 · 16:00–19:00). */
 function summarizeTrafficWindows(windows: TimelineTrafficWindow[]): string {
@@ -113,11 +118,12 @@ function VehicleConfigRow({
   );
 }
 
-const SHUTTLE_DAY_LABEL: Record<ShuttleDay, string> = {
-  tuesday: "Tuesday",
-  wednesday: "Wednesday",
-  saturday: "Saturday",
-};
+function weekdayLabelForPlanningDay(
+  specs: ShuttleDaySpec[],
+  planningDay: ShuttleDay
+): string {
+  return specs.find((s) => s.id === planningDay)?.weekdayLabel ?? planningDay;
+}
 
 function DriverConfigRow({
   driver: d,
@@ -361,6 +367,10 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                   >
                     Airport clearance time (minutes)
                   </Label>
+                  <p className="text-muted-foreground text-[0.65rem] leading-snug">
+                    Inbound driver leave = first landing + clearance + exit-to-meet − going-leg drive
+                    (see Planning run cards: Driver leave).
+                  </p>
                   <Input
                     id={`${baseId}-touchdown`}
                     type="number"
@@ -594,18 +604,14 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                 <h3 className="font-semibold text-[#111827] text-sm">
                   Vehicles available
                 </h3>
-                <GradientButton
-                  type="button"
-                  label="Add vehicle"
-                  variant="coral"
-                  className="h-9 px-3 text-sm"
-                  onClick={addVehicle}
-                />
+                <Button type="button" variant="default" size="sm" onClick={addVehicle}>
+                  Add vehicle
+                </Button>
               </div>
               <p className="text-muted-foreground text-xs">
                 The list is for{" "}
                 <span className="font-medium text-foreground">
-                  {SHUTTLE_DAY_LABEL[planningDay]}
+                  {weekdayLabelForPlanningDay(config.shuttleDays, planningDay)}
                 </span>{" "}
                 only. Add vehicle creates a fleet row for that day. Trash removes that
                 van from this day and clears it from run assignments (other days are
@@ -618,7 +624,10 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                     <VehicleConfigRow
                       key={v.id}
                       vehicle={v}
-                      planningDayLabel={SHUTTLE_DAY_LABEL[planningDay]}
+                      planningDayLabel={weekdayLabelForPlanningDay(
+                        config.shuttleDays,
+                        planningDay
+                      )}
                       onUpdate={updateVehicle}
                       onRemove={removeVehicle}
                     />
@@ -631,18 +640,14 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                 <h3 className="font-semibold text-[#111827] text-sm">
                   Drivers available
                 </h3>
-                <GradientButton
-                  type="button"
-                  label="Add driver"
-                  variant="coral"
-                  className="h-9 px-3 text-sm"
-                  onClick={addDriver}
-                />
+                <Button type="button" variant="default" size="sm" onClick={addDriver}>
+                  Add driver
+                </Button>
               </div>
               <p className="text-muted-foreground text-xs">
                 The list is for{" "}
                 <span className="font-medium text-foreground">
-                  {SHUTTLE_DAY_LABEL[planningDay]}
+                  {weekdayLabelForPlanningDay(config.shuttleDays, planningDay)}
                 </span>{" "}
                 only (use the day control above Planning to switch days). Add driver
                 creates a roster row for that day. Trash removes that row and clears
@@ -661,7 +666,10 @@ export function ConfigPanel({ planningDay }: { planningDay: ShuttleDay }) {
                       vehicles={config.vehicles.filter(
                         (v) => v.shuttleDay === planningDay
                       )}
-                      planningDayLabel={SHUTTLE_DAY_LABEL[planningDay]}
+                      planningDayLabel={weekdayLabelForPlanningDay(
+                        config.shuttleDays,
+                        planningDay
+                      )}
                       onUpdate={updateDriver}
                       onRemove={removeDriver}
                     />

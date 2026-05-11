@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useShuttle } from "@/context/shuttle-context";
 import { childSeatBadgeLabel, formatWindow, totalPaxInRun } from "@/lib/grouping";
+import { isOutboundShuttleDay } from "@/lib/shuttle-days";
 import type { RunStatus, ShuttleDay, ShuttleRun } from "@/lib/types";
 import { RunPassengerDetailBlock } from "./run-passenger-detail";
 
@@ -43,6 +44,8 @@ function AirportView({
   run: ShuttleRun | null;
   day: ShuttleDay;
 }) {
+  const { config } = useShuttle();
+  const outbound = isOutboundShuttleDay(config, day);
   if (!run) {
     return (
       <div className="rounded-xl border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-8 text-center">
@@ -56,7 +59,7 @@ function AirportView({
     <div className="space-y-6 rounded-xl border border-primary/30 bg-white p-6 shadow-sm">
       <header className="space-y-1">
         <p className="font-semibold text-primary text-sm uppercase tracking-wide">
-          Next run · {day === "saturday" ? "Departures" : "Arrivals"}
+          Next run · {outbound ? "Departures" : "Arrivals"}
         </p>
         <p className="font-bold text-[#111827] text-4xl leading-tight">
           {formatWindow(run)}
@@ -80,10 +83,10 @@ function AirportView({
               </span>
             </p>
             <p className="mt-1 font-mono font-semibold text-2xl text-[#111827]">
-              {day === "saturday" ? p.outboundFlight : p.inboundFlight}
+              {outbound ? p.outboundFlight : p.inboundFlight}
             </p>
             <p className="text-muted-foreground text-lg">
-              {day === "saturday"
+              {outbound
                 ? `Departs ${p.outboundDepartureLabel}`
                 : `Arrives ${p.inboundArrivalLabel}`}
             </p>

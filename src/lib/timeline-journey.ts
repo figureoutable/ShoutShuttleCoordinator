@@ -1,4 +1,5 @@
 import { runsOverlap } from "@/lib/grouping";
+import { shuttleSpecById } from "./shuttle-days";
 import { minutesToLabel, parseClockToMinutes } from "./time";
 import type {
   CoordinatorConfig,
@@ -66,9 +67,14 @@ export type RunTimelineJourney = {
   handoverMinutes: number;
 };
 
+/**
+ * Going leg to the airport (inbound) or first pick-up (outbound).
+ * `arriveAtEndMinute` = minute the driver must **finish** this leg (at meet / first pax time).
+ * Returns `departMinute` = when to **start** driving: `arriveAtEndMinute −` scaled travel.
+ */
 function computeOutboundLeg(
   baseTravel: number,
-  runStartMinutes: number,
+  arriveAtEndMinute: number,
   traffic: TimelineTrafficSettings
 ): { minutes: number; tier: TrafficTier; multiplier: number; departMinute: number } {
   if (baseTravel <= 0) {
@@ -76,14 +82,14 @@ function computeOutboundLeg(
       minutes: 0,
       tier: "off",
       multiplier: 1,
-      departMinute: runStartMinutes,
+      departMinute: arriveAtEndMinute,
     };
   }
-  let departApprox = Math.max(0, runStartMinutes - baseTravel);
+  let departApprox = Math.max(0, arriveAtEndMinute - baseTravel);
   let tier = trafficTierAt(departApprox, traffic);
   let mult = trafficMultiplier(tier, traffic);
   let mins = Math.max(1, Math.round(baseTravel * mult));
-  departApprox = Math.max(0, runStartMinutes - mins);
+  departApprox = Math.max(0, arriveAtEndMinute - mins);
   tier = trafficTierAt(departApprox, traffic);
   mult = trafficMultiplier(tier, traffic);
   mins = Math.max(1, Math.round(baseTravel * mult));
@@ -120,31 +126,33 @@ export function computeRunTimelineJourney(
   day: ShuttleDay,
   config: CoordinatorConfig
 ): RunTimelineJourney | null {
-  if (day !== "tuesday" && day !== "wednesday" && day !== "saturday") {
-    return null;
-  }
+  const spec = shuttleSpecById(config.shuttleDays, day);
+  if (!spec) return null;
+  const outbound = spec.kind === "outbound";
   const base = Math.max(0, config.travelTimeToHeathrowMinutes);
   const traffic = config.timelineTraffic;
   const touchdown =
-    day === "saturday" ? 0 : Math.max(0, config.touchdownToAirportExitMinutes);
+    outbound ? 0 : Math.max(0, config.touchdownToAirportExitMinutes);
   const exitMeet =
-    day === "saturday" ? 0 : Math.max(0, config.inboundAirportExitWaitMinutes);
+    outbound ? 0 : Math.max(0, config.inboundAirportExitWaitMinutes);
   const handover =
-    day === "saturday" ? 0 : Math.max(0, config.inboundHandoverBufferMinutes);
+    outbound ? 0 : Math.max(0, config.inboundHandoverBufferMinutes);
   const wait = touchdown + exitMeet + handover;
   const windowM = Math.max(0, run.endMinutes - run.startMinutes);
 
-  /** Inbound: run.start = first landing; driver targets meet after touchdown + exit-to-meet. */
-  const outboundArrivalMinute =
-    day === "saturday"
-      ? run.startMinutes
-      : run.startMinutes + touchdown + exitMeet;
+  /**
+   * Inbound: `run.startMinutes` = first flight landing in the run. Driver must be at the
+   * Heathrow meet after clearance + exit-to-meet (not before). Example: land 13:00, 30 min
+   * clearance + 0 exit-to-meet → ready 13:30; 40 min drive → **leave by 12:50**.
+   * Outbound (Sat): first pick-up window start (no airport clearance fields).
+   */
+  const driverArriveAtMeetOrFirstPickMinute = outbound
+    ? run.startMinutes
+    : run.startMinutes + touchdown + exitMeet;
 
-  const out = computeOutboundLeg(base, outboundArrivalMinute, traffic);
+  const out = computeOutboundLeg(base, driverArriveAtMeetOrFirstPickMinute, traffic);
   const displayStart =
-    out.minutes > 0
-      ? Math.max(0, outboundArrivalMinute - out.minutes)
-      : outboundArrivalMinute;
+    out.minutes > 0 ? Math.max(0, out.departMinute) : driverArriveAtMeetOrFirstPickMinute;
 
   const returnStart = run.endMinutes + wait;
   const ret = computeReturnLeg(base, returnStart, traffic);

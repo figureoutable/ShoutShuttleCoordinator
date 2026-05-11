@@ -3,7 +3,12 @@
 import type { LucideIcon } from "lucide-react";
 import { CalendarDays, LayoutList, PlaneLanding, PlaneTakeoff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { shuttleDayFilterCaption } from "@/components/coordinator/day-switcher";
+import {
+  isOutboundShuttleDay,
+  planningDayPrintLabel,
+  planningDayTitle,
+  shuttleDayFilterCaption,
+} from "@/lib/shuttle-days";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,27 +45,6 @@ import type { Passenger, ShuttleDay, ShuttleRun } from "@/lib/types";
 import { PlanningTimeline } from "./planning-timeline";
 import { RunPassengerDetailBlock } from "./run-passenger-detail";
 
-const PLANNING_DAY_META: Record<
-  ShuttleDay,
-  { title: string; icon: LucideIcon; printLabel: string }
-> = {
-  tuesday: {
-    title: "Tuesday arrivals",
-    icon: PlaneLanding,
-    printLabel: "Tuesday 22 July: arrivals",
-  },
-  wednesday: {
-    title: "Wednesday arrivals",
-    icon: PlaneLanding,
-    printLabel: "Wednesday 23 July: arrivals",
-  },
-  saturday: {
-    title: "Saturday departures",
-    icon: PlaneTakeoff,
-    printLabel: "Saturday 26 July: departures",
-  },
-};
-
 /** Select sentinel for no driver (slot stores ""). */
 const DRIVER_SELECT_NONE = "__none__";
 
@@ -83,14 +67,19 @@ function RunSheetBody({
         <h2 className="font-bold text-2xl">{dayLabel}</h2>
         <p className="text-sm">{new Date().toLocaleString("en-GB")}</p>
       </header>
-      {runs.map((run) => {
+      {runs.map((run, runIdx) => {
         const slot = runSlots[run.key];
         const pax = totalPaxInRun(run);
         const timing = runDriverTimingLabels(run, day, config);
+        const isLastRun = runIdx === runs.length - 1;
+        const lastNoTailBreak = isLastRun && unallocated.length === 0;
         return (
           <section
             key={run.key}
-            className="break-inside-avoid rounded-lg border border-[#E5E7EB] p-4"
+            className={
+              "print-run-sheet-run rounded-lg border border-[#E5E7EB] p-4 break-inside-avoid " +
+              (lastNoTailBreak ? "print-run-sheet-run--last" : "")
+            }
           >
             <div>
               <h3 className="font-semibold text-lg">
@@ -138,7 +127,12 @@ function RunSheetBody({
         );
       })}
       {unallocated.length > 0 ? (
-        <section className="break-inside-avoid rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4">
+        <section
+          className={
+            "print-run-sheet-unallocated rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4 break-inside-avoid " +
+            (runs.length > 0 ? "print-run-sheet-unallocated--after-runs" : "")
+          }
+        >
           <h3 className="font-semibold text-lg text-amber-950">
             To be allocated ({unallocated.length})
           </h3>
@@ -257,10 +251,9 @@ function RunCard({
     [run, day, config]
   );
 
-  const runWindowHeading =
-    day === "saturday"
-      ? "Passenger pick-up time:"
-      : "Passenger Arrival Time:";
+  const runWindowHeading = isOutboundShuttleDay(config, day)
+    ? "Passenger pick-up time:"
+    : "Passenger Arrival Time:";
 
   const assignedDriver = slot?.driverName?.trim() ?? "";
   const assignedDriverInRoster = assignedDriver
@@ -792,7 +785,26 @@ function DayPlanning({
 }
 
 export function PlanningBoard({ selectedDay }: { selectedDay: ShuttleDay }) {
-  const meta = PLANNING_DAY_META[selectedDay];
+  const { config } = useShuttle();
+  const spec = useMemo(
+    () => config.shuttleDays.find((s) => s.id === selectedDay),
+    [config.shuttleDays, selectedDay]
+  );
+  const meta = useMemo(() => {
+    if (!spec) {
+      return {
+        title: selectedDay,
+        icon: PlaneLanding,
+        printLabel: selectedDay,
+      };
+    }
+    const icon = spec.kind === "outbound" ? PlaneTakeoff : PlaneLanding;
+    return {
+      title: planningDayTitle(config, selectedDay),
+      icon,
+      printLabel: planningDayPrintLabel(config, selectedDay),
+    };
+  }, [config, selectedDay, spec]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -800,7 +812,7 @@ export function PlanningBoard({ selectedDay }: { selectedDay: ShuttleDay }) {
         <CalendarDays className="h-5 w-5 shrink-0 text-primary" />
         <h2 className="font-semibold text-lg whitespace-nowrap">Planning view</h2>
         <Badge variant="secondary" className="font-normal">
-          {shuttleDayFilterCaption(selectedDay)}
+          {shuttleDayFilterCaption(config, selectedDay)}
         </Badge>
       </div>
       <div className="min-h-0 overflow-hidden rounded-xl border border-[#E5E7EB] bg-[#F9FAFB]/60">

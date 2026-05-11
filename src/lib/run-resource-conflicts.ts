@@ -1,25 +1,10 @@
-import { runsOverlapJourney } from "@/lib/timeline-journey";
+import { runsOverlapJourney } from "./timeline-journey";
 import type {
   CoordinatorConfig,
   RunSlotState,
   ShuttleDay,
   ShuttleRun,
-} from "@/lib/types";
-
-const DAY_PREFIXES: ShuttleDay[] = ["tuesday", "wednesday", "saturday"];
-
-export function parseShuttleRunKey(
-  runKey: string
-): { day: ShuttleDay; runNumber: number } | null {
-  for (const day of DAY_PREFIXES) {
-    const prefix = `${day}-`;
-    if (!runKey.startsWith(prefix)) continue;
-    const n = Number(runKey.slice(prefix.length));
-    if (!Number.isFinite(n)) return null;
-    return { day, runNumber: n };
-  }
-  return null;
-}
+} from "./types";
 
 export function normalizeDriverName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
@@ -61,3 +46,5 @@ export function findConflictingRunForDriver(
   }
   return null;
 }
+
+export { parseShuttleRunKey } from "./shuttle-days";

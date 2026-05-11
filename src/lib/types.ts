@@ -1,6 +1,28 @@
 import type { CanonicalStop } from "./locations";
 
-export type ShuttleDay = "tuesday" | "wednesday" | "saturday";
+/** Stable id for a shuttle operating day (run keys are `${id}-${runNumber}`). */
+export type ShuttleDay = string;
+
+export type ShuttleDayKind = "inbound" | "outbound";
+
+/**
+ * One tab in Planning / Day-of. Inbound days match spreadsheet “arrival date” cells
+ * via `arrivalMatchLines`; exactly one outbound day is supported (departure / Saturday run).
+ */
+export interface ShuttleDaySpec {
+  id: ShuttleDay;
+  kind: ShuttleDayKind;
+  weekdayLabel: string;
+  /** Short date shown in tabs and print headers, e.g. "22 Jul". */
+  dateLine: string;
+  /** e.g. "Arrivals" or "Departures". */
+  kindLine: string;
+  /**
+   * Inbound only: each non-empty line is an OR branch; within a line, comma-separated
+   * fragments must all appear in the arrival-date cell (case-insensitive).
+   */
+  arrivalMatchLines: string;
+}
 
 export type RunStatus = "pending" | "departed" | "completed";
 
@@ -47,12 +69,16 @@ export interface TimelineTrafficSettings {
 }
 
 export interface CoordinatorConfig {
+  /** Operating days (tabs + roster keys). First outbound in the list is the departure day. */
+  shuttleDays: ShuttleDaySpec[];
   groupingWindowMinutes: number;
   saturdayStartTime: string;
   travelTimeToHeathrowMinutes: number;
   /**
-   * Tuesday/Wednesday: minutes from landing (run window start) to airport exit / kerbside.
-   * Used for driver-leave timing and for return-leg placement after the last landing.
+   * Tuesday/Wednesday: minutes from **first landing in the run** to airport exit / kerbside
+   * (clearance). Driver **leave** uses: first landing + this + `inboundAirportExitWaitMinutes`
+   * minus `travelTimeToHeathrowMinutes` (e.g. land 13:00, 30 here, 0 exit-to-meet → meet-ready
+   * 13:30; 40 min drive → leave 12:50). Also used for return-leg placement after the last landing.
    */
   touchdownToAirportExitMinutes: number;
   /**
@@ -112,8 +138,8 @@ export interface Passenger {
   inboundEligible: boolean;
   outboundEligible: boolean;
   arrivalDateLabel: string;
-  inboundTuesday: boolean;
-  inboundWednesday: boolean;
+  /** Inbound shuttle day ids this row applies to (from `CoordinatorConfig.shuttleDays` matchers). */
+  inboundDayIds: ShuttleDay[];
   terminal: string;
   /** Optional: city or airport flying from (inbound), if present on upload sheet. */
   inboundFlyingFrom: string;

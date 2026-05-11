@@ -9,6 +9,7 @@ import {
   normalizeDriverName,
   parseShuttleRunKey,
 } from "@/lib/run-resource-conflicts";
+import { isOutboundShuttleDay } from "@/lib/shuttle-days";
 import {
   computeRunTimelineJourney,
   runDriverTimingLabels,
@@ -44,8 +45,9 @@ export function explainScheduleFailure(
   const pax = totalPaxInRun(run);
   const fleetIds = fleetVehicleIdsForDay(vehicles, day);
   const timing = runDriverTimingLabels(run, day, config);
-  const windowLabel =
-    day === "saturday" ? "Passenger pick-up window" : "Passenger arrival window";
+  const windowLabel = isOutboundShuttleDay(config, day)
+    ? "Passenger pick-up window"
+    : "Passenger arrival window";
 
   const requirements: string[] = [
     `${pax} passengers: vehicle must have at least ${pax + 1} total seats (including driver).`,
@@ -268,11 +270,83 @@ function gapRank(g: number): number {
   return g;
 }
 
+/** Runs already assigned to this driver on this day (from `work` before placing `run`). */
+function countPriorAssignmentsForDriver(
+  driverName: string,
+  allRuns: ShuttleRun[],
+  work: Record<string, RunSlotState>,
+  day: ShuttleDay,
+  config: CoordinatorConfig
+): number {
+  const want = normalizeDriverName(driverName);
+  if (!want) return 0;
+  let n = 0;
+  for (const r of allRuns) {
+    if (parseShuttleRunKey(r.key, config)?.day !== day) continue;
+    if (normalizeDriverName(work[r.key]?.driverName ?? "") === want) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/** Sum of journey lengths (minutes) already placed on this driver that day. */
+function dutyMinutesSoFarForDriver(
+  driverName: string,
+  allRuns: ShuttleRun[],
+  work: Record<string, RunSlotState>,
+  day: ShuttleDay,
+  config: CoordinatorConfig
+): number {
+  const want = normalizeDriverName(driverName);
+  if (!want) return 0;
+  let sum = 0;
+  for (const r of allRuns) {
+    if (parseShuttleRunKey(r.key, config)?.day !== day) continue;
+    if (normalizeDriverName(work[r.key]?.driverName ?? "") !== want) continue;
+    const { start, end } = journeyBounds(r, day, config);
+    if (end > start) sum += end - start;
+  }
+  return sum;
+}
+
+function countPriorAssignmentsForVehicle(
+  vehicleId: string,
+  allRuns: ShuttleRun[],
+  work: Record<string, RunSlotState>,
+  day: ShuttleDay,
+  config: CoordinatorConfig
+): number {
+  let n = 0;
+  for (const r of allRuns) {
+    if (parseShuttleRunKey(r.key, config)?.day !== day) continue;
+    if (work[r.key]?.vehicleId === vehicleId) n += 1;
+  }
+  return n;
+}
+
+function dutyMinutesSoFarForVehicle(
+  vehicleId: string,
+  allRuns: ShuttleRun[],
+  work: Record<string, RunSlotState>,
+  day: ShuttleDay,
+  config: CoordinatorConfig
+): number {
+  let sum = 0;
+  for (const r of allRuns) {
+    if (parseShuttleRunKey(r.key, config)?.day !== day) continue;
+    if (work[r.key]?.vehicleId !== vehicleId) continue;
+    const { start, end } = journeyBounds(r, day, config);
+    if (end > start) sum += end - start;
+  }
+  return sum;
+}
+
 /**
  * Greedy assignment: largest groups first. Among valid (vehicle, driver) pairs,
- * prefers **more turnaround buffer**: time from the previous journey end on that van
- * and on that driver to this run’s journey start (spreads load across vans when another
- * van has been idle longer).
+ * prefers **fair use of drivers** (fewer prior runs that day, then less total journey time
+ * already placed), then **fair use of vans** (fewer runs and less duty on that vehicle),
+ * then drivers who have been idle longer, then vans with more turnaround buffer.
  *
  * **Non-overlap (same as manual Planning):** uses journey windows (driver leave through
  * estimated return from Configuration), not only passenger arrival/pickup spread.
@@ -294,7 +368,7 @@ export function computeAutoScheduleForDay(
 
   const work: Record<string, RunSlotState> = { ...existingSlots };
   for (const key of Object.keys(work)) {
-    const p = parseShuttleRunKey(key);
+    const p = parseShuttleRunKey(key, config);
     if (p?.day === day) {
       work[key] = { vehicleId: null, driverName: "" };
     }
@@ -327,6 +401,10 @@ export function computeAutoScheduleForDay(
       driver: Driver;
       vehicleGap: number;
       driverGap: number;
+      priorAssign: number;
+      priorDuty: number;
+      priorVehicleAssign: number;
+      priorVehicleDuty: number;
     };
     const candidates: Cand[] = [];
 
@@ -354,15 +432,64 @@ export function computeAutoScheduleForDay(
           day,
           config
         );
-        candidates.push({ vehicle, driver, vehicleGap, driverGap });
+        const priorAssign = countPriorAssignmentsForDriver(
+          driver.name,
+          runs,
+          work,
+          day,
+          config
+        );
+        const priorDuty = dutyMinutesSoFarForDriver(
+          driver.name,
+          runs,
+          work,
+          day,
+          config
+        );
+        const priorVehicleAssign = countPriorAssignmentsForVehicle(
+          vehicle.id,
+          runs,
+          work,
+          day,
+          config
+        );
+        const priorVehicleDuty = dutyMinutesSoFarForVehicle(
+          vehicle.id,
+          runs,
+          work,
+          day,
+          config
+        );
+        candidates.push({
+          vehicle,
+          driver,
+          vehicleGap,
+          driverGap,
+          priorAssign,
+          priorDuty,
+          priorVehicleAssign,
+          priorVehicleDuty,
+        });
       }
     }
 
     candidates.sort((a, b) => {
-      const vg = gapRank(b.vehicleGap) - gapRank(a.vehicleGap);
-      if (vg !== 0) return vg;
+      if (a.priorAssign !== b.priorAssign) {
+        return a.priorAssign - b.priorAssign;
+      }
+      if (a.priorDuty !== b.priorDuty) {
+        return a.priorDuty - b.priorDuty;
+      }
+      if (a.priorVehicleAssign !== b.priorVehicleAssign) {
+        return a.priorVehicleAssign - b.priorVehicleAssign;
+      }
+      if (a.priorVehicleDuty !== b.priorVehicleDuty) {
+        return a.priorVehicleDuty - b.priorVehicleDuty;
+      }
       const dg = gapRank(b.driverGap) - gapRank(a.driverGap);
       if (dg !== 0) return dg;
+      const vg = gapRank(b.vehicleGap) - gapRank(a.vehicleGap);
+      if (vg !== 0) return vg;
       if (a.vehicle.capacity !== b.vehicle.capacity) {
         return a.vehicle.capacity - b.vehicle.capacity;
       }

@@ -173,12 +173,6 @@ export function parseFormRows(rows: unknown[][]): ParseResult {
     const gatwickInbound = terminal.toLowerCase().includes("gatwick");
 
     const arrivalDateLabel = cell(row, idx.arrivalDate);
-    const dl = arrivalDateLabel.toLowerCase();
-    const inboundTuesday =
-      dl.includes("tuesday") && (dl.includes("22") || dl.includes("july 22"));
-    const inboundWednesday =
-      dl.includes("wednesday") &&
-      (dl.includes("23") || dl.includes("july 23"));
 
     const outboundReqRaw = cell(row, idx.outboundReq);
     const outboundEligible = outboundReqRaw
@@ -215,8 +209,7 @@ export function parseFormRows(rows: unknown[][]): ParseResult {
       inboundEligible: inboundHeathrow,
       outboundEligible,
       arrivalDateLabel,
-      inboundTuesday,
-      inboundWednesday,
+      inboundDayIds: [],
       terminal,
       inboundFlyingFrom: cell(row, idx.inboundFlyingFrom),
       airline: cell(row, idx.airline),
@@ -294,4 +287,61 @@ function emptyFlags(): UploadFlags {
     unknownLocations: [],
     duplicateEmails: [],
   };
+}
+
+/** Recompute upload flags from the current passenger list (e.g. after manual add/remove). */
+export function computeUploadFlagsFromPassengers(passengers: Passenger[]): UploadFlags {
+  const flags = emptyFlags();
+  const emailRows = new Map<string, number[]>();
+  passengers.forEach((p, j) => {
+    const email = p.email.trim().toLowerCase();
+    if (email) {
+      const list = emailRows.get(email) ?? [];
+      list.push(j);
+      emailRows.set(email, list);
+    }
+  });
+
+  for (const [email, indices] of emailRows) {
+    if (indices.length > 1) {
+      const names = indices
+        .map((i) => passengers[i]?.name)
+        .filter(Boolean)
+        .join(", ");
+      flags.duplicateEmails.push(`${email}: ${indices.length}× (${names})`);
+    }
+  }
+
+  for (const p of passengers) {
+    if (p.groupSize >= 8) {
+      flags.largeGroups.push({ name: p.name, groupSize: p.groupSize });
+    }
+    const types: string[] = [];
+    if (p.seats.baby) types.push(`Baby×${p.seats.baby}`);
+    if (p.seats.toddler) types.push(`Toddler×${p.seats.toddler}`);
+    if (p.seats.child) types.push(`Child×${p.seats.child}`);
+    if (p.seats.booster) types.push(`Booster×${p.seats.booster}`);
+    if (types.length) {
+      flags.childSeats.push({ name: p.name, types });
+    }
+    if (p.gatwickInbound) {
+      flags.gatwickCount += 1;
+    }
+    if (p.unknownInboundLocation) {
+      flags.unknownLocations.push({
+        name: p.name,
+        field: "inbound",
+        raw: p.inboundDropOffRaw,
+      });
+    }
+    if (p.unknownOutboundLocation) {
+      flags.unknownLocations.push({
+        name: p.name,
+        field: "outbound",
+        raw: p.outboundPickUpRaw,
+      });
+    }
+  }
+
+  return flags;
 }

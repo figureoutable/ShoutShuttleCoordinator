@@ -29,6 +29,13 @@ import {
   parseShuttleRunKey,
 } from "@/lib/run-resource-conflicts";
 import { computeAutoScheduleForDay } from "@/lib/auto-schedule-run-resources";
+import type { ManualPassengerInput } from "@/lib/manual-passenger";
+import { buildManualPassenger } from "@/lib/manual-passenger";
+import { computeUploadFlagsFromPassengers } from "@/lib/parse-form";
+import {
+  attachInboundDayIds,
+  mergeInboundDateHintsFromPassengers,
+} from "@/lib/shuttle-days";
 import {
   loadPersistedShuttleBundle,
   normalizeCoordinatorResourceDays,
@@ -67,6 +74,10 @@ interface ShuttleContextValue {
   /** Removes this fleet row for one day, strips its id from driver restrictions, and clears it from any run slots. */
   removeVehicle: (vehicle: Vehicle) => void;
   ingestParse: (result: ParseResult) => void;
+  /** Append a walk-up / ad-hoc passenger without re-importing the spreadsheet. */
+  addManualPassenger: (input: ManualPassengerInput) => void;
+  /** Remove a passenger and clear their run overrides. */
+  removePassenger: (passengerId: string) => void;
   /** Passenger file data and planning assignments (not configuration). */
   clearData: () => void;
   /** Vehicles, drivers, timing, traffic: back to defaults. Keeps passenger data. */
@@ -133,11 +144,9 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
     const saved = loadPersistedShuttleBundle();
     startTransition(() => {
       if (saved) {
-        const resolvedConfig = saved.config
-          ? normalizeCoordinatorResourceDays(saved.config)
-          : null;
+        const resolvedConfig = saved.config ?? null;
         if (resolvedConfig) {
-          setConfig(resolvedConfig);
+          setConfig(normalizeCoordinatorResourceDays(resolvedConfig));
         }
         if (saved.passengers) setPassengers(saved.passengers);
         if (saved.uploadFlags !== undefined) setUploadFlags(saved.uploadFlags);
@@ -208,7 +217,12 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
   ]);
 
   const ingestParse = useCallback((result: ParseResult) => {
-    setPassengers(result.passengers);
+    setConfig((c) => {
+      const mapped = attachInboundDayIds(result.passengers, c.shuttleDays);
+      const nextDays = mergeInboundDateHintsFromPassengers(c.shuttleDays, mapped);
+      setPassengers(mapped);
+      return { ...c, shuttleDays: nextDays };
+    });
     setUploadFlags(result.flags);
     setTotalRows(result.totalRows);
     setRunSlots({});
@@ -216,6 +230,56 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
     setPassengerRunOverrides({});
     setRunScheduleDiagnostics({});
   }, []);
+
+  const addManualPassenger = useCallback(
+    (input: ManualPassengerInput) => {
+      if (!input.name.trim()) return;
+      const rowIndex =
+        passengers.reduce((m, p) => Math.max(m, p.rowIndex), 1) + 1;
+      const built = buildManualPassenger(input, config, rowIndex);
+      const nextPassengers = attachInboundDayIds(
+        [...passengers, built],
+        config.shuttleDays
+      );
+      setPassengers(nextPassengers);
+      setConfig((c) => ({
+        ...c,
+        shuttleDays: mergeInboundDateHintsFromPassengers(
+          c.shuttleDays,
+          nextPassengers
+        ),
+      }));
+      setUploadFlags(computeUploadFlagsFromPassengers(nextPassengers));
+    },
+    [passengers, config]
+  );
+
+  const removePassenger = useCallback(
+    (passengerId: string) => {
+      const nextPassengers = passengers.filter((p) => p.id !== passengerId);
+      setPassengers(nextPassengers);
+      setConfig((c) => ({
+        ...c,
+        shuttleDays: mergeInboundDateHintsFromPassengers(
+          c.shuttleDays,
+          nextPassengers
+        ),
+      }));
+      setPassengerRunOverrides((prev) => {
+        const next = { ...prev };
+        for (const k of Object.keys(next)) {
+          if (k.endsWith(`::${passengerId}`)) delete next[k];
+        }
+        return next;
+      });
+      setUploadFlags(
+        nextPassengers.length === 0
+          ? null
+          : computeUploadFlagsFromPassengers(nextPassengers)
+      );
+    },
+    [passengers, config]
+  );
 
   const clearData = useCallback(() => {
     setPassengers([]);
@@ -269,7 +333,7 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
         setRunSlots((prev) => {
           const next = { ...prev };
           for (const [k, slot] of Object.entries(prev)) {
-            const p = parseShuttleRunKey(k);
+            const p = parseShuttleRunKey(k, config);
             if (!p || p.day !== driver.shuttleDay) continue;
             if (
               normalizeDriverName(slot.driverName) !==
@@ -283,7 +347,7 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    [config.drivers]
+    [config]
   );
 
   const saveToBrowser = useCallback(() => {
@@ -345,7 +409,7 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
 
   const setRunVehicle = useCallback(
     (runKey: string, vehicleId: string | null): boolean => {
-      const parsed = parseShuttleRunKey(runKey);
+      const parsed = parseShuttleRunKey(runKey, config);
       if (!parsed) return false;
       const runs = getRuns(parsed.day);
       const target = runs.find((r) => r.key === runKey);
@@ -400,7 +464,7 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
 
   const setRunDriver = useCallback(
     (runKey: string, driverName: string): boolean => {
-      const parsed = parseShuttleRunKey(runKey);
+      const parsed = parseShuttleRunKey(runKey, config);
       if (!parsed) return false;
       const runs = getRuns(parsed.day);
       const target = runs.find((r) => r.key === runKey);
@@ -512,7 +576,7 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
       setRunScheduleDiagnostics((dPrev) => {
         const next = { ...dPrev };
         for (const k of Object.keys(next)) {
-          if (parseShuttleRunKey(k)?.day === day) {
+          if (parseShuttleRunKey(k, config)?.day === day) {
             delete next[k];
           }
         }
@@ -535,39 +599,30 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const tuesdayRuns = useMemo(
-    () =>
-      buildRunsForDayWithOverrides(
-        passengers,
-        "tuesday",
-        config,
-        passengerRunOverrides
-      ).runs,
-    [passengers, config, passengerRunOverrides]
-  );
-  const wedRuns = useMemo(
-    () =>
-      buildRunsForDayWithOverrides(
-        passengers,
-        "wednesday",
-        config,
-        passengerRunOverrides
-      ).runs,
-    [passengers, config, passengerRunOverrides]
-  );
-  const satRuns = useMemo(
-    () =>
-      buildRunsForDayWithOverrides(
-        passengers,
-        "saturday",
-        config,
-        passengerRunOverrides
-      ).runs,
-    [passengers, config, passengerRunOverrides]
-  );
+  const inboundRunCount = useMemo(() => {
+    return config.shuttleDays
+      .filter((s) => s.kind === "inbound")
+      .reduce((acc, s) => {
+        const n = buildRunsForDayWithOverrides(
+          passengers,
+          s.id,
+          config,
+          passengerRunOverrides
+        ).runs.length;
+        return acc + n;
+      }, 0);
+  }, [passengers, config, passengerRunOverrides]);
 
-  const inboundRunCount = tuesdayRuns.length + wedRuns.length;
-  const outboundRunCount = satRuns.length;
+  const outboundRunCount = useMemo(() => {
+    const oid = config.shuttleDays.find((x) => x.kind === "outbound")?.id;
+    if (!oid) return 0;
+    return buildRunsForDayWithOverrides(
+      passengers,
+      oid,
+      config,
+      passengerRunOverrides
+    ).runs.length;
+  }, [passengers, config, passengerRunOverrides]);
 
   const value = useMemo<ShuttleContextValue>(
     () => ({
@@ -579,6 +634,8 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
       removeDriver,
       removeVehicle,
       ingestParse,
+      addManualPassenger,
+      removePassenger,
       clearData,
       clearResources,
       saveToBrowser,
@@ -606,6 +663,8 @@ export function ShuttleProvider({ children }: { children: ReactNode }) {
       removeDriver,
       removeVehicle,
       ingestParse,
+      addManualPassenger,
+      removePassenger,
       clearData,
       clearResources,
       saveToBrowser,

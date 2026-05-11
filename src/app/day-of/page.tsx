@@ -1,12 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ConfigPanel } from "@/components/coordinator/config-panel";
 import { DayOfBoard } from "@/components/coordinator/day-of-board";
+import { useShuttle } from "@/context/shuttle-context";
 import type { ShuttleDay } from "@/lib/types";
 
 export default function DayOfPage() {
-  const [day, setDay] = useState<ShuttleDay>("tuesday");
+  const { config } = useShuttle();
+  const firstDayId = useMemo(
+    () => config.shuttleDays[0]?.id ?? "tuesday",
+    [config.shuttleDays]
+  );
+  const [day, setDay] = useState<ShuttleDay>(firstDayId);
+  useEffect(() => {
+    setDay((d) => (config.shuttleDays.some((s) => s.id === d) ? d : firstDayId));
+  }, [config.shuttleDays, firstDayId]);
 
   return (
     <div className="min-h-screen bg-white">

@@ -2,35 +2,10 @@
 
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useShuttle } from "@/context/shuttle-context";
 import type { ShuttleDay } from "@/lib/types";
 
-export const SHUTTLE_DAY_TABS: {
-  id: ShuttleDay;
-  label: string;
-  dateLine: string;
-  kindLine: string;
-}[] = [
-  { id: "tuesday", label: "Tuesday", dateLine: "22 Jul", kindLine: "Arrivals" },
-  {
-    id: "wednesday",
-    label: "Wednesday",
-    dateLine: "23 Jul",
-    kindLine: "Arrivals",
-  },
-  {
-    id: "saturday",
-    label: "Saturday",
-    dateLine: "26 Jul",
-    kindLine: "Departures",
-  },
-];
-
-/** Short caption for filters / config copy, e.g. "Tuesday 22 Jul · Arrivals". */
-export function shuttleDayFilterCaption(day: ShuttleDay): string {
-  const d = SHUTTLE_DAY_TABS.find((x) => x.id === day);
-  if (!d) return day;
-  return `${d.label} ${d.dateLine} · ${d.kindLine}`;
-}
+export { shuttleDayFilterCaption } from "@/lib/shuttle-days";
 
 export function DaySwitcher({
   value,
@@ -41,6 +16,9 @@ export function DaySwitcher({
   onValueChange: (day: ShuttleDay) => void;
   className?: string;
 }) {
+  const { config } = useShuttle();
+  const tabs = config.shuttleDays;
+
   return (
     <Tabs
       value={value}
@@ -51,7 +29,7 @@ export function DaySwitcher({
         variant="default"
         className="no-print flex !h-auto min-h-0 w-full items-stretch gap-1.5 p-1.5"
       >
-        {SHUTTLE_DAY_TABS.map((d) => (
+        {tabs.map((d) => (
           <TabsTrigger
             key={d.id}
             value={d.id}
@@ -61,7 +39,9 @@ export function DaySwitcher({
               "text-foreground/70 data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sm"
             )}
           >
-            <span className="font-semibold text-sm sm:text-[0.95rem]">{d.label}</span>
+            <span className="font-semibold text-sm sm:text-[0.95rem]">
+              {d.weekdayLabel}
+            </span>
             <span className="max-w-full px-0.5 font-medium text-[0.65rem] opacity-85 leading-snug sm:text-[0.7rem] data-active:opacity-95">
               {d.dateLine} · {d.kindLine}
             </span>

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { childSeatBadgeLabel } from "@/lib/grouping";
+import { useShuttle } from "@/context/shuttle-context";
+import { isOutboundShuttleDay } from "@/lib/shuttle-days";
 import type { Passenger, ShuttleDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +52,8 @@ export function RunPassengerDetailBlock({
   /** Renders inside this card (e.g. run placement on the planning list). */
   allocationControl?: ReactNode;
 }) {
-  const inbound = day === "tuesday" || day === "wednesday";
+  const { config } = useShuttle();
+  const inbound = !isOutboundShuttleDay(config, day);
   const seats = childSeatBadgeLabel(p);
 
   const flight = inbound

@@ -4,6 +4,7 @@ import {
   minutesToLabelNoHourPad,
   parseClockToMinutes,
 } from "./time";
+import { isOutboundShuttleDay } from "./shuttle-days";
 import type {
   CoordinatorConfig,
   Passenger,
@@ -58,8 +59,10 @@ function groupGreedy(
   windowMinutes: number,
   maxSeats: number,
   day: ShuttleDay,
+  config: CoordinatorConfig,
   startRunNumber: number
 ): ShuttleRun[] {
+  const inboundAirports = !isOutboundShuttleDay(config, day);
   const used = new Set<string>();
   const runs: ShuttleRun[] = [];
   let runNumber = startRunNumber;
@@ -77,7 +80,7 @@ function groupGreedy(
         startMinutes: t,
         endMinutes: t,
         oversized: true,
-        terminals: uniqueTerminals([p], day !== "saturday"),
+        terminals: uniqueTerminals([p], inboundAirports),
       });
       used.add(p.id);
       runNumber += 1;
@@ -115,7 +118,7 @@ function groupGreedy(
       startMinutes: earliest,
       endMinutes: endT,
       oversized: false,
-      terminals: uniqueTerminals(group, day !== "saturday"),
+      terminals: uniqueTerminals(group, inboundAirports),
     });
     runNumber += 1;
   }
@@ -123,16 +126,14 @@ function groupGreedy(
   return runs;
 }
 
-function filterInboundDay(
+function filterInboundForDay(
   passengers: Passenger[],
-  day: "tuesday" | "wednesday"
+  dayId: ShuttleDay
 ): Passenger[] {
   return passengers.filter((p) => {
     if (!p.inboundEligible || p.gatwickInbound) return false;
     if (p.inboundArrivalMinutes == null) return false;
-    if (day === "tuesday" && !p.inboundTuesday) return false;
-    if (day === "wednesday" && !p.inboundWednesday) return false;
-    return true;
+    return p.inboundDayIds?.includes(dayId) ?? false;
   });
 }
 
@@ -160,8 +161,8 @@ function getPoolSortedForDay(
   day: ShuttleDay,
   config: CoordinatorConfig
 ): Passenger[] {
-  if (day === "tuesday" || day === "wednesday") {
-    const pool = filterInboundDay(passengers, day);
+  if (!isOutboundShuttleDay(config, day)) {
+    const pool = filterInboundForDay(passengers, day);
     return [...pool].sort(
       (a, b) => (a.inboundArrivalMinutes ?? 0) - (b.inboundArrivalMinutes ?? 0)
     );
@@ -197,7 +198,7 @@ function recomputeRunFromPassengers(
       endMinutes: template.endMinutes,
     };
   }
-  if (day === "saturday") {
+  if (isOutboundShuttleDay(config, day)) {
     const picks = passengers.map((p) => computeSaturdayPickupMinutes(p, config)!);
     return {
       ...template,
@@ -305,8 +306,8 @@ export function buildRunsForDay(
   const maxSeats = maxPassengerSeats(config, day);
   const window = config.groupingWindowMinutes;
 
-  if (day === "tuesday" || day === "wednesday") {
-    const pool = filterInboundDay(passengers, day);
+  if (!isOutboundShuttleDay(config, day)) {
+    const pool = filterInboundForDay(passengers, day);
     const sorted = [...pool].sort(
       (a, b) => (a.inboundArrivalMinutes ?? 0) - (b.inboundArrivalMinutes ?? 0)
     );
@@ -316,6 +317,7 @@ export function buildRunsForDay(
       window,
       maxSeats,
       day,
+      config,
       1
     );
   }
@@ -332,7 +334,7 @@ export function buildRunsForDay(
   });
   const sorted = withPick.map((x) => x.p);
   const getTime = (p: Passenger) => computeSaturdayPickupMinutes(p, config)!;
-  return groupGreedy(sorted, getTime, window, maxSeats, "saturday", 1);
+  return groupGreedy(sorted, getTime, window, maxSeats, day, config, 1);
 }
 
 export function formatWindow(run: ShuttleRun): string {

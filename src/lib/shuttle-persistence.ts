@@ -2,6 +2,11 @@ import {
   defaultCoordinatorConfig,
   defaultTimelineTraffic,
 } from "@/lib/default-coordinator-config";
+import {
+  coerceResourceShuttleDayIds,
+  ensureShuttleDaysShape,
+  normalizePassengersForShuttleDays,
+} from "@/lib/shuttle-days";
 import type {
   CoordinatorConfig,
   Driver,
@@ -31,7 +36,7 @@ export type PersistedShuttleBundle = {
   runScheduleDiagnostics?: Record<string, RunScheduleDiagnostic>;
 };
 
-function isVehicle(x: unknown): x is Vehicle {
+function isVehicle(x: unknown, validDayIds?: Set<string>): x is Vehicle {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
   return (
@@ -39,7 +44,7 @@ function isVehicle(x: unknown): x is Vehicle {
     typeof o.name === "string" &&
     (o.type === "Van" || o.type === "Car") &&
     typeof o.capacity === "number" &&
-    isShuttleDayValue(o.shuttleDay)
+    isShuttleDayValue(o.shuttleDay, validDayIds)
   );
 }
 
@@ -66,17 +71,21 @@ function parseTimelineTraffic(raw: unknown): TimelineTrafficSettings {
   };
 }
 
-function isShuttleDayValue(x: unknown): x is ShuttleDay {
-  return x === "tuesday" || x === "wednesday" || x === "saturday";
+const LEGACY_DAY_IDS = new Set<string>(["tuesday", "wednesday", "saturday"]);
+
+function isShuttleDayValue(x: unknown, validIds?: Set<string>): x is ShuttleDay {
+  if (typeof x !== "string" || !/^[\w-]+$/.test(x) || x.length > 48) return false;
+  if (validIds?.size) return validIds.has(x);
+  return LEGACY_DAY_IDS.has(x);
 }
 
-function isDriver(x: unknown): x is Driver {
+function isDriver(x: unknown, validDayIds?: Set<string>): x is Driver {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
   if (
     typeof o.id !== "string" ||
     typeof o.name !== "string" ||
-    !isShuttleDayValue(o.shuttleDay) ||
+    !isShuttleDayValue(o.shuttleDay, validDayIds) ||
     typeof o.shiftStart !== "string" ||
     typeof o.shiftEnd !== "string"
   ) {
@@ -122,13 +131,17 @@ function migrateLegacyDriverRecord(o: Record<string, unknown>): Driver[] {
   }));
 }
 
-function normalizePersistedDrivers(raw: unknown, fallback: Driver[]): Driver[] {
+function normalizePersistedDrivers(
+  raw: unknown,
+  fallback: Driver[],
+  validDayIds?: Set<string>
+): Driver[] {
   if (!Array.isArray(raw)) return fallback;
   const out: Driver[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const o = item as Record<string, unknown>;
-    if (isShuttleDayValue(o.shuttleDay) && isDriver(item)) {
+    if (isShuttleDayValue(o.shuttleDay, validDayIds) && isDriver(item, validDayIds)) {
       out.push(item as Driver);
       continue;
     }
@@ -164,13 +177,17 @@ function migrateLegacyVehicleRecord(o: Record<string, unknown>): Vehicle[] {
   }));
 }
 
-function normalizePersistedVehicles(raw: unknown, fallback: Vehicle[]): Vehicle[] {
+function normalizePersistedVehicles(
+  raw: unknown,
+  fallback: Vehicle[],
+  validDayIds?: Set<string>
+): Vehicle[] {
   if (!Array.isArray(raw)) return fallback;
   const out: Vehicle[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const o = item as Record<string, unknown>;
-    if (isShuttleDayValue(o.shuttleDay) && isVehicle(item)) {
+    if (isShuttleDayValue(o.shuttleDay, validDayIds) && isVehicle(item, validDayIds)) {
       out.push(item as Vehicle);
       continue;
     }
@@ -187,17 +204,31 @@ function normalizePersistedVehicles(raw: unknown, fallback: Vehicle[]): Vehicle[
   return out.length ? out : fallback;
 }
 
-/** Shallow copy so callers can safely mutate without aliasing persisted state. */
+/** Ensures `shuttleDays` exists and roster rows reference valid day ids. */
 export function normalizeCoordinatorResourceDays(c: CoordinatorConfig): CoordinatorConfig {
-  return { ...c };
+  const d = defaultCoordinatorConfig();
+  const shuttleDays = ensureShuttleDaysShape(
+    Array.isArray(c.shuttleDays) ? c.shuttleDays : null,
+    d.shuttleDays
+  );
+  return {
+    ...c,
+    shuttleDays,
+    vehicles: coerceResourceShuttleDayIds(c.vehicles, shuttleDays),
+    drivers: coerceResourceShuttleDayIds(c.drivers, shuttleDays),
+  };
 }
 
 function parseConfig(raw: unknown): CoordinatorConfig {
   const d = defaultCoordinatorConfig();
   if (!raw || typeof raw !== "object") return d;
   const o = raw as Record<string, unknown>;
-  const vehicles = normalizePersistedVehicles(o.vehicles, d.vehicles);
-  const drivers = normalizePersistedDrivers(o.drivers, d.drivers);
+  const shuttleDays = ensureShuttleDaysShape(o.shuttleDays, d.shuttleDays);
+  const allowedDayIds = new Set(shuttleDays.map((s) => s.id));
+  let vehicles = normalizePersistedVehicles(o.vehicles, d.vehicles, allowedDayIds);
+  let drivers = normalizePersistedDrivers(o.drivers, d.drivers, allowedDayIds);
+  vehicles = coerceResourceShuttleDayIds(vehicles, shuttleDays);
+  drivers = coerceResourceShuttleDayIds(drivers, shuttleDays);
 
   const inboundFromFile =
     typeof o.inboundAirportExitWaitMinutes === "number" &&
@@ -227,6 +258,7 @@ function parseConfig(raw: unknown): CoordinatorConfig {
   }
 
   return normalizeCoordinatorResourceDays({
+    shuttleDays,
     groupingWindowMinutes:
       typeof o.groupingWindowMinutes === "number" && o.groupingWindowMinutes > 0
         ? o.groupingWindowMinutes
@@ -322,7 +354,7 @@ function parseRunScheduleDiagnostics(
     if (o.unscheduled !== true) continue;
     if (typeof o.runNumber !== "number") continue;
     const sd = o.shuttleDay;
-    if (sd !== "tuesday" && sd !== "wednesday" && sd !== "saturday") continue;
+    if (typeof sd !== "string" || !/^[\w-]+$/.test(sd)) continue;
     const req = Array.isArray(o.requirements)
       ? o.requirements.filter((x) => typeof x === "string")
       : [];
@@ -383,7 +415,10 @@ export function loadPersistedShuttleBundle(): Partial<PersistedShuttleBundle> | 
     const out: Partial<PersistedShuttleBundle> = {};
     if ("config" in o) out.config = parseConfig(o.config);
     if (Array.isArray(o.passengers)) {
-      out.passengers = o.passengers as Passenger[];
+      const rawPassengers = o.passengers as Passenger[];
+      out.passengers = out.config
+        ? normalizePassengersForShuttleDays(rawPassengers, out.config.shuttleDays)
+        : rawPassengers;
     }
     if ("uploadFlags" in o) {
       out.uploadFlags =

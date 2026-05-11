@@ -1,4 +1,6 @@
+import { defaultCoordinatorConfig } from "./default-coordinator-config";
 import { parseFormRows } from "./parse-form";
+import { attachInboundDayIds } from "./shuttle-days";
 
 const MOCK_SHEET: unknown[][] = [
   [
@@ -172,5 +174,10 @@ const MOCK_SHEET: unknown[][] = [
 ];
 
 export function getMockParseResult() {
-  return parseFormRows(MOCK_SHEET);
+  const base = parseFormRows(MOCK_SHEET);
+  const specs = defaultCoordinatorConfig().shuttleDays;
+  return {
+    ...base,
+    passengers: attachInboundDayIds(base.passengers, specs),
+  };
 }

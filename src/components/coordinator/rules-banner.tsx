@@ -9,12 +9,16 @@ export function RulesBanner() {
   const seats = Math.max(maxVehicleCapacity - 1, 0);
   const win = config.groupingWindowMinutes;
   const sat = config.saturdayStartTime;
+  const outbound = config.shuttleDays.find((s) => s.kind === "outbound");
+  const departPill = outbound
+    ? `🕗 ${outbound.weekdayLabel}: no runs before ${sat}`
+    : `🕗 No runs before ${sat}`;
 
   const pills = [
     `🚐 ${seats} seats per van (incl. driver)`,
     `⏱ Max ${win} min grouping window`,
     `📍 4 drop-off locations`,
-    `🕗 Saturday: no runs before ${sat}`,
+    departPill,
   ];
 
   return (

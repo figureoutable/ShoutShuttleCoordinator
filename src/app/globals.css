@@ -149,4 +149,25 @@
   body {
     background: #ffffff !important;
   }
+
+  /** Run sheet: one run per printed page (see RunSheetBody). */
+  .print-run-sheet-run {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-run-sheet-run:not(.print-run-sheet-run--last) {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-run-sheet-unallocated {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-run-sheet-unallocated.print-run-sheet-unallocated--after-runs {
+    page-break-before: always;
+    break-before: page;
+  }
 }

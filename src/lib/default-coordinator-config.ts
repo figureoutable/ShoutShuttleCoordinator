@@ -5,6 +5,7 @@ import type {
   TimelineTrafficSettings,
   Vehicle,
 } from "./types";
+import { defaultShuttleDays } from "./shuttle-days";
 
 export function defaultTimelineTraffic(): TimelineTrafficSettings {
   return {
@@ -76,6 +77,7 @@ export function defaultDrivers(): Driver[] {
 
 export function defaultCoordinatorConfig(): CoordinatorConfig {
   return {
+    shuttleDays: defaultShuttleDays(),
     groupingWindowMinutes: 90,
     saturdayStartTime: "08:00",
     travelTimeToHeathrowMinutes: 40,
