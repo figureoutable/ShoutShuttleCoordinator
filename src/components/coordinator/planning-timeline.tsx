@@ -88,7 +88,7 @@ function TimelineRunDetailHeader({
 
   return (
     <div className="shrink-0 border-primary/20 border-b bg-primary px-1.5 py-1 text-left text-[0.58rem] leading-snug opacity-95">
-      <p className="font-semibold">Run: {run.runNumber}</p>
+      <p className="font-bold tracking-tight text-[#111827]">Run: {run.runNumber}</p>
       {timing ? (
         <>
           <p>

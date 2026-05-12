@@ -156,7 +156,7 @@ function DayOfContent({ day }: { day: ShuttleDay }) {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle
-                        className={`${collapsed ? "text-xl" : "text-2xl"} text-[#111827]`}
+                        className={`font-bold tracking-tight ${collapsed ? "text-xl" : "text-2xl"} text-[#111827]`}
                       >
                         Run {run.runNumber}{" "}
                         <span className="font-normal text-muted-foreground">

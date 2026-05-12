@@ -42,6 +42,7 @@ import {
 } from "@/lib/run-resource-conflicts";
 import { runDriverTimingLabels } from "@/lib/timeline-journey";
 import type { Passenger, ShuttleDay, ShuttleRun } from "@/lib/types";
+import { AddManualBookingButton } from "./manual-booking-dialog";
 import { PlanningTimeline } from "./planning-timeline";
 import { RunPassengerDetailBlock } from "./run-passenger-detail";
 
@@ -82,7 +83,7 @@ function RunSheetBody({
             }
           >
             <div>
-              <h3 className="font-semibold text-lg">
+              <h3 className="font-bold text-lg tracking-tight">
                 Run {run.runNumber}{" "}
                 <span className="font-normal text-muted-foreground">
                   · {formatWindow(run)}
@@ -283,7 +284,7 @@ function RunCard({
         <div className="grid w-full gap-y-3 gap-x-3 sm:grid-cols-3 sm:items-center sm:gap-x-5">
           <div className="flex min-h-0 min-w-0 flex-col justify-start gap-y-1.5">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <CardTitle className="text-[#111827] text-xs leading-tight font-medium sm:text-sm">
+              <CardTitle className="text-[#111827] text-base leading-tight font-bold tracking-tight sm:text-lg group-data-[size=sm]/card:text-base group-data-[size=sm]/card:font-bold">
                 Run {run.runNumber}
               </CardTitle>
             </div>
@@ -604,6 +605,11 @@ function DayPlanning({
   const canAutoSchedule =
     dayDriverCount > 0 && dayVehicleCount > 0 && runs.length > 0;
 
+  const manualBookingArrivalHint = useMemo(
+    () => printLabel.split(":")[0]?.trim(),
+    [printLabel]
+  );
+
   const focusRunFromTimeline = (runKey: string) => {
     setPlanView("list");
     requestAnimationFrame(() => {
@@ -691,6 +697,9 @@ function DayPlanning({
               >
                 Schedule
               </Button>
+              <AddManualBookingButton
+                arrivalDateHint={manualBookingArrivalHint}
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -719,7 +728,7 @@ function DayPlanning({
                 No shuttle runs for this day with the current upload and rules.
               </p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-[calc(0.75rem*1.8)]">
                 {unallocated.length > 0 ? (
                   <Card className="border-2 border-dashed border-amber-300 bg-amber-50/40">
                     <CardHeader className="pb-2">
